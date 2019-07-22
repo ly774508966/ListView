@@ -2029,7 +2029,7 @@ namespace UGUI.ListView
             /// <summary>
             /// 左向右
             /// </summary>
-            LeftToRight,
+            LeftToRight = 0,
 
             /// <summary>
             /// 右向左
@@ -2093,43 +2093,43 @@ namespace UGUI.ListView
             /// </summary>
             Both
         }
+        #endregion
+    }
+
+    /// <summary>
+    /// 移动状态
+    /// </summary>
+    public enum MoveState
+    {
+        /// <summary>
+        /// 停止状态
+        /// </summary>
+        Stop,
 
         /// <summary>
-        /// 移动状态
+        /// 暂停状态
         /// </summary>
-        public enum MoveState
-        {
-            /// <summary>
-            /// 停止状态
-            /// </summary>
-            Stop,
+        Pause,
 
-            /// <summary>
-            /// 暂停状态
-            /// </summary>
-            Pause,
+        /// <summary>
+        /// 开始移动
+        /// </summary>
+        StartMove,
 
-            /// <summary>
-            /// 开始移动
-            /// </summary>
-            StartMove,
+        /// <summary>
+        /// 移动中
+        /// </summary>
+        Moving,
 
-            /// <summary>
-            /// 移动中
-            /// </summary>
-            Moving,
+        /// <summary>
+        /// 结束移动
+        /// </summary>
+        EndMove,
 
-            /// <summary>
-            /// 结束移动
-            /// </summary>
-            EndMove,
-
-            /// <summary>
-            /// 移动完成
-            /// </summary>
-            MoveComplete
-        }
-        #endregion
+        /// <summary>
+        /// 移动完成
+        /// </summary>
+        MoveComplete
     }
 }
 
