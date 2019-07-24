@@ -27,15 +27,8 @@ namespace UGUI.Editor
 
             if (keys == null || values == null)
             {
-                flag = BindingFlags.Instance |
-                      BindingFlags.NonPublic |
-                      BindingFlags.SetField;
-
-                type.InvokeMember("keys", flag, null,
-                   target, new object[] { new List<string>() });
-
-                type.InvokeMember("values", flag, null,
-                   target, new object[] { new List<Object>() });
+                keys = new List<string>();
+                values = new List<Object>();
             }
 
             list = new ReorderableList(keys, typeof(string));
