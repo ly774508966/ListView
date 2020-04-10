@@ -1,7 +1,7 @@
 ﻿using System;
 using UnityEngine;
 
-namespace UGUI.ListView
+namespace UGUI
 {
     /// <summary>
     /// 列表预制数据

@@ -1,17 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using DG.Tweening;
-using Pool;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-namespace UGUI.ListView
+namespace UGUI
 {
     /// <summary>
     /// 可滑动的区域  使用前需先为content赋值 可以通过FillItemData指定的回调函数设置列表数据。
     /// </summary>
+    [DisallowMultipleComponent]
+    [RequireComponent(typeof(RectTransform))]
     public class ScrollableRect : UIBehaviour, ICanvasElement, ILayoutElement
     {
         #region Properties
@@ -38,6 +38,45 @@ namespace UGUI.ListView
                 moveIndex = totalCount;
             }
         }
+
+        /// <summary>
+        /// 是否在列表的最顶层
+        /// </summary>
+        public bool IsTop
+        {
+            get
+            {
+                var first = GetFirstShow();
+                if (first)
+                {
+                    return first.Index == 0;
+                }
+
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// 是否在列表的最底层
+        /// </summary>
+        public bool IsBottom
+        {
+            get
+            {
+                var last = GetLastShow();
+                if (last)
+                {
+                    return last.Index == 0;
+                }
+
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// 列表当前选择索引
+        /// </summary>
+        public int Index { get; set; } = -1;
 
         /// <summary>
         /// 是否是循环列表, 当为True时 则总数量为-1(会自动填充格子不用手动调用)
@@ -135,17 +174,11 @@ namespace UGUI.ListView
                     isPause = value;
                     if (isPause)
                     {
-                        foreach (var tween in tempTweener)
-                        {
-                            tween.Pause();
-                        }
+
                     }
                     else
                     {
-                        foreach (var tween in tempTweener)
-                        {
-                            tween.Play();
-                        }
+
                     }
                 }
             }
@@ -162,6 +195,21 @@ namespace UGUI.ListView
         /// </summary>
         public bool Horizontal => ScrollDirection == Direction.LeftToRight ||
                                      ScrollDirection == Direction.RightToLeft;
+
+        /// <summary>
+        /// 子元素渲染顺序
+        /// </summary>
+        public ChildrenRenderOrder RenderOrder
+        {
+            get => renderOrder;
+            set
+            {
+                if (!Equals(renderOrder, value))
+                {
+                    renderOrder = value;
+                }
+            }
+        }
         #endregion
 
         #region Events
@@ -189,8 +237,14 @@ namespace UGUI.ListView
         /// </summary>
         public Action<MoveState> MoveStateChanged;
 
+        /// <summary>
+        /// 当列表元素生成时
+        /// </summary>
         public Action<ScrollableRect, ScrollItem> OnItemInstantiated;
 
+        /// <summary>
+        /// 当列表元素回收时
+        /// </summary>
         public Action<ScrollableRect, ScrollItem> OnItemRecycled;
 
         /// <summary>
@@ -225,46 +279,29 @@ namespace UGUI.ListView
         /// <summary>
         /// 清空所有的格子
         /// </summary>
-        /// <param name="excludePool">是否清理池子</param>
-        public void ClearCells(bool excludePool)
+        /// <param name="destroy">是否清理池子</param>
+        public void ClearCells(bool destroy = false)
         {
             ItemStart = 0;
             ItemEnd = 0;
             for (int i = childrenList.Count - 1; i >= 0; i--)
             {
                 var child = childrenList[i];
-                child.Recycle();
+                if (destroy)
+                {
+                    Destroy(child);
+                }
+                else
+                {
+                    child.Recycle();
+                }
             }
 
             childrenList.Clear();
-
-            if (!excludePool)
-            {
-                return;
-            }
-            
-            if (poolManager)
-            {
-                poolManager.RemoveAll();
-            }
-            else
-            {
-                var hashSet = new HashSet<string>();
-                for (int i = 0; i < totalCount; i++)
-                {
-                    var poolName = GetCustomItem.Invoke(i);
-                    hashSet.Add(poolName);
-                }
-
-                foreach (var set in hashSet)
-                {
-                    PoolManager.Instance.RemovePool(set);
-                }
-            }
         }
 
         /// <summary>
-        /// 滚动到指定索引的位置
+        /// 滚动到指定索引的位置 立即完成
         /// </summary>
         /// <param name="index">索引位置</param>
         public void ScrollToView(int index)
@@ -398,25 +435,6 @@ namespace UGUI.ListView
         }
 
         /// <summary>
-        /// 设置对象池, 如果已经初始化完成 则会重新填充所有格子
-        /// </summary>
-        public void SetPool(PoolManager pool)
-        {
-            if (!pool)
-            {
-                throw new Exception("对象池不能为空");
-            }
-
-            if (poolManager != null)
-            {
-                poolManager.RemoveAll();   
-            }
-
-            poolManager = pool;
-            FillCells();
-        }
-
-        /// <summary>
         /// 全部停止移动
         /// </summary>
         /// <param name="offset">停止移动时的偏移</param>
@@ -488,7 +506,7 @@ namespace UGUI.ListView
         /// <summary>
         /// 获取显示视图中第一个显示的元素
         /// </summary>
-        /// <returns></returns>
+        /// <returns>元素</returns>
         public ScrollItem GetFirstShow()
         {
             if (childrenList.Count <= 0)
@@ -496,29 +514,21 @@ namespace UGUI.ListView
                 return null;
             }
 
-            for (var i = 0; i < childrenList.Count; i++)
+            return childrenList[0];
+        }
+
+        /// <summary>
+        /// 获取显示视图中第一个显示的元素
+        /// </summary>
+        /// <returns>元素</returns>
+        public ScrollItem GetLastShow()
+        {
+            if (childrenList.Count <= 0)
             {
-                var item = childrenList[i];
-                var bounds = GetBounds4Item(i);
-                if (Horizontal)
-                {
-                    if (bounds.max.x > viewBounds.min.x && 
-                        bounds.min.x <= viewBounds.min.x)
-                    {
-                        return item;
-                    }
-                }
-                else
-                {
-                    if (bounds.max.y > viewBounds.min.y &&
-                        bounds.min.y <= viewBounds.min.y)
-                    {
-                        return item;
-                    }
-                }
+                return null;
             }
 
-            return childrenList[0];
+            return childrenList[childrenList.Count - 1];
         }
 
         /// <summary>
@@ -536,7 +546,6 @@ namespace UGUI.ListView
             if (executing == CanvasUpdate.PostLayout)
             {
                 UpdateBounds();
-
                 hasRebuiltLayout = true;
             }
         }
@@ -546,30 +555,10 @@ namespace UGUI.ListView
         protected override void Awake()
         {
             base.Awake();
-            if (!content)
-            {
-                throw new Exception("Content节点为空");
-            }
 
             //缓存布局器
             contentLayout = content.GetComponent<HorizontalOrVerticalLayoutGroup>();
             gridLayout = content.GetComponent<GridLayoutGroup>();
-
-            if (localPool)
-            {
-                poolManager = GetComponent<PoolManager>();
-                if (poolManager == null)
-                {
-                    poolManager = gameObject.AddComponent<PoolManager>();
-                }
-
-                //创建本地池管理
-                GameObject poolsRoot = new GameObject("Pools");
-                poolsRoot.transform.SetParent(transform);
-                poolsRoot.transform.localScale = Vector3.one;
-                poolsRoot.transform.localPosition = Vector3.zero;
-                poolManager.PoolsRoot = poolsRoot.transform;
-            }
 
             SetAnchorPivot();
         }
@@ -579,6 +568,13 @@ namespace UGUI.ListView
             base.OnEnable();
 
             CanvasUpdateRegistry.RegisterCanvasElementForLayoutRebuild(this);
+        }
+
+        protected override void Start()
+        {
+            base.Start();
+
+            FillCells();
         }
 
         protected virtual void LateUpdate()
@@ -593,13 +589,11 @@ namespace UGUI.ListView
             switch (moveState)
             {
                 case MoveState.StartMove when StartBounce != null:
-
                     position = StartBounce.Invoke(this, Speed, startComplete);
                     SetContentPosition(position, false);
 
                     break;
                 case MoveState.Moving when MoveBounce != null:
-
                     position = MoveBounce.Invoke(this, Speed, () =>
                     {
                         moveComplete();
@@ -608,21 +602,22 @@ namespace UGUI.ListView
                     SetContentPosition(position);
 
                     break;
-                case MoveState.EndMove when EndBounce != null:
+                case MoveState.Moving when MoveBounce == null:
+                    MovingEffectTick();
 
+                    break;
+                case MoveState.EndMove when EndBounce != null:
                     var speed = Horizontal ? tempVelocity.x : tempVelocity.y;
                     position = EndBounce.Invoke(this, speed, endComplete);
                     SetContentPosition(position, false);
 
                     break;
                 case MoveState.EndMove when EndBounce == null:
-
                     EndEffectTick();
 
                     break;
-                default:
-
-                    MovingEffectTick();
+                case MoveState.StartMove when StartBounce == null:
+                    StartEffectTick();
 
                     break;
             }
@@ -679,7 +674,15 @@ namespace UGUI.ListView
                 childrenList.Insert(0, newItem);
                 newItem.RectTrans.SetAsFirstSibling();
                 size = Mathf.Max(GetSize(newItem), size);
-                OnItemInstantiated?.Invoke(this, newItem);
+
+                try
+                {
+                    OnItemInstantiated?.Invoke(this, newItem);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError(e);
+                }
             }
 
             //设置项删除阀值 和内容区域位置
@@ -699,10 +702,7 @@ namespace UGUI.ListView
         /// <returns>删除项的大小</returns>
         protected virtual float DeleteItemAtStart()
         {
-            if (velocity != Vector2.zero &&
-                !isLoop &&
-                ItemEnd >= totalCount + 1 ||
-                content.childCount == 0)
+            if ((velocity != Vector2.zero && !isLoop && ItemEnd >= totalCount - 1) || childrenList.Count == 0)
             {
                 return 0;
             }
@@ -716,7 +716,15 @@ namespace UGUI.ListView
                 oldItem.Recycle();
                 childrenList.Remove(oldItem);
                 ItemStart++;
-                OnItemRecycled?.Invoke(this, oldItem);
+
+                try
+                {
+                    OnItemRecycled?.Invoke(this, oldItem);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError(e);
+                }
 
                 if (childrenList.Count == 0)
                 {
@@ -751,9 +759,18 @@ namespace UGUI.ListView
             {
                 var newItem = InstantiateItem(ItemEnd);
                 childrenList.Add(newItem);
+                newItem.RectTrans.SetAsLastSibling();
                 size = Mathf.Max(GetSize(newItem), size);
                 ItemEnd++;
-                OnItemInstantiated?.Invoke(this, newItem);
+
+                try
+                {
+                    OnItemInstantiated?.Invoke(this, newItem);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError(e);
+                }
 
                 if (!isLoop && ItemEnd >= totalCount)
                 {
@@ -778,10 +795,7 @@ namespace UGUI.ListView
         /// <returns>删除项的大小</returns>
         protected virtual float DeleteItemAtEnd()
         {
-            if (velocity != Vector2.zero &&
-                !isLoop &&
-                ItemStart < CellCount ||
-                content.childCount == 0)
+            if ((velocity != Vector2.zero && !isLoop && ItemStart < CellCount) || childrenList.Count == 0)
             {
                 return 0;
             }
@@ -795,7 +809,15 @@ namespace UGUI.ListView
                 oldItem.Recycle();
                 childrenList.Remove(oldItem);
                 ItemEnd--;
-                OnItemRecycled?.Invoke(this, oldItem);
+
+                try
+                {
+                    OnItemRecycled?.Invoke(this, oldItem);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError(e);
+                }
 
                 if (ItemEnd % CellCount == 0 || childrenList.Count == 0)
                 {
@@ -857,22 +879,22 @@ namespace UGUI.ListView
             }
 
             //获取池子并生成项
-            var pool = GetPoolByName(prefabSource.PrefabName, prefabSource.Template);
-            var spawn = pool.Spawn();
-            var slotItem = spawn.GetComponent<ScrollItem>();
-            if (slotItem == null)
-            {
-                slotItem = spawn.AddComponent<ScrollItem>();
-            }
-
+            var slotItem = ScrollPoolManager.Instance.Spawn(GetHashCode(), prefabSource.PrefabName, prefabSource.template);
             //初始化参数
             slotItem.Parent = this;
+            slotItem.PrefabName = prefabSource.PrefabName;
             slotItem.Index = itemIndex;
-            slotItem.Pool = pool;
             slotItem.name = itemIndex.ToString();
             slotItem.Spacing = Spacing;
-            slotItem.RectTrans.SetParent(Content, false);
-            slotItem.gameObject.SetActive(true);
+            if (slotItem.transform.parent != Content)
+            {
+                slotItem.RectTrans.SetParent(Content, false);
+            }
+
+            if (!slotItem.IsActive)
+            {
+                slotItem.gameObject.SetActive(true);
+            }
 
             //填充数据
             try
@@ -885,58 +907,6 @@ namespace UGUI.ListView
             }
 
             return slotItem;
-        }
-
-        /// <summary>
-        /// 通过名字获取对象池
-        /// </summary>
-        /// <param name="poolName">池名字也可以是路径</param>
-        /// <param name="template">模板</param>
-        /// <returns></returns>
-        protected ObjectPool<GameObject> GetPoolByName(
-            string poolName, 
-            GameObject template = null)
-        {
-            ObjectPool<GameObject> pool;
-            //如果是本地池
-            if (poolManager != null)
-            {
-                if (poolManager.TryGetPool(poolName, out pool))
-                {
-
-                }
-                else
-                {
-                    if (template == null)
-                    {
-                        template = Resources.Load<GameObject>(poolName);
-                    }
-
-                    pool = poolManager.GetOrCreatePool(
-                        poolName + GetHashCode(), template, 1);
-                }
-            }
-            else
-            {
-                //获取池子
-                if (PoolManager.Instance.TryGetPool(poolName, out pool))
-                {
-
-                }
-                else
-                {
-                    if (template == null)
-                    {
-                        //这里可以使用自己的资源加载方式
-                        template = Resources.Load<GameObject>(poolName);
-                    }
-
-                    pool = PoolManager.Instance.GetOrCreatePool(
-                        poolName + GetHashCode(), template, 1);
-                }
-            }
-
-            return pool;
         }
 
         /// <summary>
@@ -956,9 +926,11 @@ namespace UGUI.ListView
             startComplete = complete;
             if (bounceType == BounceType.Both || bounceType == BounceType.OnlyStart)
             {
+                var tempSpeed = ReverseDirection ? startSpeed : -startSpeed;
+                tempVelocity = Horizontal ? new Vector2(tempSpeed, 0) : new Vector2(0, tempSpeed);
                 if (StartBounce == null)
                 {
-                    DoStartEffect(speed, complete);
+                    DoStartEffect(speed);
                 }
 
                 return;
@@ -980,7 +952,7 @@ namespace UGUI.ListView
             moveComplete = complete;
             if (MoveBounce == null)
             {
-                DoMovingEffect(speed, complete);
+                DoMovingEffect(speed);
             }
         }
 
@@ -1011,28 +983,9 @@ namespace UGUI.ListView
         /// </summary>
         /// <param name="speed">滚动速度</param>
         /// <param name="complete">开始滚动完成回调</param>
-        protected virtual void DoStartEffect(float speed, Action complete)
+        protected virtual void DoStartEffect(float speed)
         {
-            speed = Mathf.Abs(speed);
-            float current = 0;
-            var tween = DOTween.To(
-                    () => current,
-                    value =>
-                    {
-                        current = value;
-                        var realSpeed = ReverseDirection ? -current : current;
-                        velocity = Horizontal ? new Vector2(realSpeed, 0) :
-                            new Vector2(0, realSpeed);
-                    },
-                    speed,
-                    0.5f).SetEase(Ease.InExpo)
-                .OnComplete(() =>
-                {
-                    complete();
-                    startComplete = null;
-                });
-
-            tempTweener.Add(tween);
+            startEffect = true;
         }
 
         /// <summary>
@@ -1040,7 +993,7 @@ namespace UGUI.ListView
         /// </summary>
         /// <param name="speed">滚动速度</param>
         /// <param name="complete">滚动完成回调</param>
-        protected virtual void DoMovingEffect(float speed, Action complete)
+        protected virtual void DoMovingEffect(float speed)
         {
             speed = ReverseDirection ? -speed : speed;
             velocity = GetVector(speed);
@@ -1055,7 +1008,7 @@ namespace UGUI.ListView
         private void MovingEffectTick()
         {
             var position = content.anchoredPosition;
-            var deltaTime = Time.smoothDeltaTime;
+            var deltaTime = Time.unscaledDeltaTime;
             var axis = Horizontal ? 0 : 1;
             if (velocity != Vector2.zero)
             {
@@ -1114,6 +1067,33 @@ namespace UGUI.ListView
             
         }
 
+        private void StartEffectTick()
+        {
+            if (startEffect)
+            {
+                //移动结束减速回弹效果
+                var position = content.anchoredPosition;
+                var deltaTime = Time.unscaledDeltaTime;
+                var axis = Horizontal ? 0 : 1;
+                if (tempVelocity[axis] != 0)
+                {
+                    tempVelocity[axis] *= Mathf.Pow(0.1f, deltaTime * 10);
+                    if (Mathf.Abs(tempVelocity[axis]) < 10)
+                    {
+                        tempVelocity[axis] = 0;
+                        startEffect = false;
+                        startComplete?.Invoke();
+                        startComplete = null;
+                        var offset = CalculateOffset(Vector2.zero);
+                        startOffset = offset[axis];
+                    }
+
+                    position[axis] += tempVelocity[axis] * deltaTime;
+                    SetContentPosition(position, false);
+                }
+            }
+        }
+
         /// <summary>
         /// 结束效果回弹事件
         /// </summary>
@@ -1125,8 +1105,8 @@ namespace UGUI.ListView
             var axis = Horizontal ? 0 : 1;
             if (tempVelocity[axis] != 0)
             {
-                tempVelocity[axis] *= Mathf.Pow(0.1f, deltaTime * 15);
-                if (Mathf.Abs(tempVelocity[axis]) < 100)
+                tempVelocity[axis] *= Mathf.Pow(bounceEnd, deltaTime * 10);
+                if (Mathf.Abs(tempVelocity[axis]) < 10)
                 {
                     tempVelocity[axis] = 0;
                     startEnd = true;
@@ -1145,7 +1125,7 @@ namespace UGUI.ListView
                     Content.anchoredPosition[axis],
                     Content.anchoredPosition[axis] + offset[axis],
                     ref v,
-                    0.04f,
+                    bounceSmooth,
                     Mathf.Infinity, deltaTime);
 
                 if (Mathf.Abs(v) < 10)
@@ -1181,17 +1161,13 @@ namespace UGUI.ListView
         /// </summary>
         private void ClearTweener(bool complete = true)
         {
-            if (tempTweener.Count == 0)
-            {
-                return;
-            }
+            startEffect = false;
+            startEnd = false;
+            moveState = MoveState.Stop;
 
-            foreach (var tween in tempTweener)
-            {
-                tween.Kill(complete);
-            }
-
-            tempTweener.Clear();
+            startComplete = null;
+            moveComplete = null;
+            endComplete = null;
         }
 
         /// <summary>
@@ -1294,7 +1270,7 @@ namespace UGUI.ListView
 
             var offset = Horizontal ? ViewRect.rect.width : ViewRect.rect.height;
 
-            return Mathf.Abs(size) - offset;
+            return Mathf.Abs(size) - startOffset;
         }
 
         /// <summary>
@@ -1344,7 +1320,7 @@ namespace UGUI.ListView
 
             if (GetWidthOrHeight == null)
             {
-                throw new Exception("获取高度或宽度异常");
+                return GetFirstShow().ItemSizeWithSpacing;
             }
 
             return GetWidthOrHeight.Invoke(index);
@@ -1450,7 +1426,7 @@ namespace UGUI.ListView
                 }
             }
 
-            //当视图区域的最小值时 > 内容区域的最小值 + 阀值
+            //当视图区域的最大值时 < 内容区域的最大值 - 阀值
             if (viewBounds.max.x < contentBounds.max.x - threshold)
             {
                 float size = DeleteItemAtEnd(), totalSize = size;
@@ -1467,7 +1443,7 @@ namespace UGUI.ListView
                 }
             }
 
-            //当视图区域的最大值时 < 内容区域的最大值 - 阀值
+            //当视图区域的最小值时 > 内容区域的最小值 + 阀值
             if (viewBounds.min.x > contentBounds.min.x + threshold)
             {
                 float size = DeleteItemAtStart(), totalSize = size;
@@ -1578,11 +1554,6 @@ namespace UGUI.ListView
         /// <returns></returns>
         private bool CanMove(int index)
         {
-            if (index < 0 || index >= childrenList.Count)
-            {
-                return true;
-            }
-
             viewBounds = new Bounds(ViewRect.rect.center, ViewRect.rect.size);
             var itemBounds = GetBounds4Item(index);
             float offset;
@@ -1678,7 +1649,7 @@ namespace UGUI.ListView
                 {
                     speed[axis] *= Mathf.Pow(
                         decelerationRate,
-                        Time.unscaledDeltaTime * slowDownCoefficient);
+                        p: Time.unscaledDeltaTime * slowDownCoefficient);
                     if (Mathf.Abs(speed[axis]) < 100)
                     {
                         speed[axis] = 0;
@@ -1695,15 +1666,15 @@ namespace UGUI.ListView
         /// 更新内容区域大小
         /// </summary>
         /// <param name="updateItems"></param>
-        protected virtual void UpdateBounds(bool updateItems = false)
+        protected internal virtual void UpdateBounds(bool updateItems = false)
         {
-            viewBounds = new Bounds(ViewRect.rect.center, ViewRect.rect.size);
-            contentBounds = GetBounds();
-
             if (content == null)
             {
                 return;
             }
+
+            viewBounds = new Bounds(ViewRect.rect.center, ViewRect.rect.size);
+            contentBounds = GetBounds();
 
             //检查是否可以添加或删除节点
             if (updateItems && UpdateItems())
@@ -1731,7 +1702,7 @@ namespace UGUI.ListView
         /// <param name="contentPivot"></param>
         /// <param name="contentSize"></param>
         /// <param name="contentPos"></param>
-        private void AdjustBounds(
+        protected void AdjustBounds(
             ref Bounds viewBounds,
             ref Vector2 contentPivot,
             ref Vector3 contentSize,
@@ -1832,6 +1803,7 @@ namespace UGUI.ListView
             if (!hasRebuiltLayout && !CanvasUpdateRegistry.IsRebuildingLayout())
             {
                 Canvas.ForceUpdateCanvases();
+                hasRebuiltLayout = true;
             }
         }
 
@@ -1907,7 +1879,7 @@ namespace UGUI.ListView
                     {
                         if (gridLayout.constraint == GridLayoutGroup.Constraint.Flexible)
                         {
-                            Debug.LogWarning("不支持自由模式");
+                            Debug.LogError("不支持自由模式");
                         }
 
                         return gridLayout.constraintCount;
@@ -1953,13 +1925,7 @@ namespace UGUI.ListView
         /// prefab数据
         /// </summary>
         [SerializeField]
-        private List<ListViewPrefabSource> prefabSources;
-
-        /// <summary>
-        /// 是否使用本地对象池
-        /// </summary>
-        [SerializeField]
-        private bool localPool = false;
+        private List<ListViewPrefabSource> prefabSources = null;
 
         [SerializeField]
         private bool isLoop;
@@ -1968,7 +1934,7 @@ namespace UGUI.ListView
         /// 内容父节点
         /// </summary>
         [SerializeField]
-        private RectTransform content;
+        private RectTransform content = null;
 
         /// <summary>
         /// 总数量
@@ -1977,9 +1943,11 @@ namespace UGUI.ListView
         private int totalCount = 1;
 
         [SerializeField]
+        [Range(0, 1)]
         private float decelerationRate = 0.3f;
 
         [SerializeField]
+        [Range(0, 5)]
         private float slowDownCoefficient = 2;
 
         [SerializeField]
@@ -1992,11 +1960,17 @@ namespace UGUI.ListView
         [SerializeField]
         private BounceType bounceType = BounceType.Custom;
 
+        [SerializeField]
+        private ChildrenRenderOrder renderOrder = ChildrenRenderOrder.Ascent;
+
         protected float threshold;
         protected Bounds contentBounds;
         protected Bounds viewBounds;
         protected Vector2 velocity;
 
+        protected int moveIndex; // 移动位置索引
+
+        private bool startEffect;
         private Action startComplete;
         private Action moveComplete;
         private Action endComplete;
@@ -2004,19 +1978,24 @@ namespace UGUI.ListView
         private MoveState moveState = MoveState.Stop;
         private Vector2 tempVelocity;
         private bool startEnd;
-        private int moveIndex;
         private float totalDistance;
         private float slowDistance;
         private float moveDistance;
 
-        private List<Tween> tempTweener = new List<Tween>(4);
+        private float startOffset;
+        [SerializeField]
+        private float startSpeed = 1000;
+        [SerializeField]
+        private float bounceSmooth = 0.05f;
+        [SerializeField]
+        private float bounceEnd = 0.05f;
+
         private ReadOnlyCollection<ScrollItem> items;
         private GridLayoutGroup gridLayout;
         private LayoutGroup contentLayout;
 
         protected readonly List<ScrollItem> childrenList = new List<ScrollItem>();
         protected readonly Vector3[] corners = new Vector3[4];
-        protected PoolManager poolManager;
         private bool hasRebuiltLayout;
         #endregion
 
@@ -2029,7 +2008,7 @@ namespace UGUI.ListView
             /// <summary>
             /// 左向右
             /// </summary>
-            LeftToRight = 0,
+            LeftToRight,
 
             /// <summary>
             /// 右向左
@@ -2093,43 +2072,43 @@ namespace UGUI.ListView
             /// </summary>
             Both
         }
+
+        /// <summary>
+        /// 移动状态
+        /// </summary>
+        public enum MoveState
+        {
+            /// <summary>
+            /// 停止状态
+            /// </summary>
+            Stop,
+
+            /// <summary>
+            /// 暂停状态
+            /// </summary>
+            Pause,
+
+            /// <summary>
+            /// 开始移动
+            /// </summary>
+            StartMove,
+
+            /// <summary>
+            /// 移动中
+            /// </summary>
+            Moving,
+
+            /// <summary>
+            /// 结束移动
+            /// </summary>
+            EndMove,
+
+            /// <summary>
+            /// 移动完成
+            /// </summary>
+            MoveComplete
+        }
         #endregion
-    }
-
-    /// <summary>
-    /// 移动状态
-    /// </summary>
-    public enum MoveState
-    {
-        /// <summary>
-        /// 停止状态
-        /// </summary>
-        Stop,
-
-        /// <summary>
-        /// 暂停状态
-        /// </summary>
-        Pause,
-
-        /// <summary>
-        /// 开始移动
-        /// </summary>
-        StartMove,
-
-        /// <summary>
-        /// 移动中
-        /// </summary>
-        Moving,
-
-        /// <summary>
-        /// 结束移动
-        /// </summary>
-        EndMove,
-
-        /// <summary>
-        /// 移动完成
-        /// </summary>
-        MoveComplete
     }
 }
 

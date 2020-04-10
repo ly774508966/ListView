@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 
-namespace Pool
+namespace UGUI
 {
     /// <summary>
     /// 池管理器
@@ -118,7 +118,6 @@ namespace Pool
             info.pool.DestroyAll(false);
             pools.Remove(poolName);
             Destroy(info.root.gameObject);
-
         }
 
         /// <summary>

@@ -2,45 +2,58 @@
 using System.Collections;
 using System.Collections.Generic;
 
-namespace Pool
+namespace UGUI
 {
-    /// <summary>
-    /// 对象池
-    /// </summary>
-    /// <typeparam name="T">对象的类型</typeparam>
-    public class ObjectPool<T> : IEnumerable<KeyValuePair<T, bool>>
-      where T : class
+    public enum PoolMode
     {
-        #region Events
         /// <summary>
-        /// 当对象创建时
+        /// When the pool content is not enough, recycling old to new use.
         /// </summary>
-        public event Action<T> Created;
+        Recovery = -2,
 
         /// <summary>
-        /// 当对象销毁时
+        /// Multiply the current number by 2.
         /// </summary>
-        public event Action<T> Destroying;
+        Multiple = -1,
 
         /// <summary>
-        /// 当对象生成时
+        /// The current amount plus the initial number.
         /// </summary>
-        public event Action<T> Spawned;
+        Add = 0,
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    public interface IPoolItem
+    {
+        /// <summary>
+        /// When object is created, this method is triggered.
+        /// </summary>
+        bool OnCreated<T>(ObjectPool<T> pool) where T : class;
 
         /// <summary>
-        /// 当对象回收时
+        /// When object is destroy, this method is triggered.
         /// </summary>
-        public event Action<T> Recycled;
+        bool OnDestroying();
 
         /// <summary>
-        /// 当对象建造时
+        /// When object is generated, this method is triggered.
         /// </summary>
-        public event Action Builded;
-        #endregion
+        void OnSpawned();
 
+        /// <summary>
+        /// When object is recycled, this method is triggered.
+        /// </summary>
+        void OnRecycled();
+    }
+
+    public class ObjectPool<T> : IEnumerable<KeyValuePair<T, bool>>
+        where T : class
+    {
         #region Properties
         /// <summary>
-        /// 剩余数量
+        /// 
         /// </summary>
         public int ResidueCount
         {
@@ -54,7 +67,7 @@ namespace Pool
         }
 
         /// <summary>
-        /// 总容量
+        /// 
         /// </summary>
         public int Capacity
         {
@@ -70,6 +83,7 @@ namespace Pool
                     return itemList.Count;
                 }
             }
+
             set
             {
                 if (itemList == null || Template == null)
@@ -77,280 +91,250 @@ namespace Pool
                     return;
                 }
 
-                int count = Math.Max(0, value);
-                if (count - itemList.Count <= 0)
+                int realCapacity = Math.Max(0, value);
+                int needAddCount = realCapacity - itemList.Count;
+                if (needAddCount <= 0)
                 {
                     return;
                 }
 
                 lock (syncObject)
                 {
-                    Rebuild(count);
+                    Rebuild(realCapacity);
                 }
             }
         }
 
         /// <summary>
-        /// 模式
+        /// 
         /// </summary>
-        public PoolMode Mode { get; set; } = PoolMode.Add;
+        public int Mode { get; set; } = (int)PoolMode.Add;
 
         /// <summary>
-        /// 对象模板
+        /// 
         /// </summary>
-        public T Template { get; private set; }
+        public T Template { get; private set; } = null;
 
         /// <summary>
-        /// 用户自定义数据
+        /// 
         /// </summary>
         public object UserData { get; set; } = null;
+        #endregion
+
+        #region Events
+        public event Action<T> Created;
+        public event Action<T> Destroying;
+        public event Action<T> Spawned;
+        public event Action<T> Recycled;
+        public event Action Builded;
         #endregion
 
         #region Methods
         public ObjectPool(int count = 0)
         {
-            if (typeof(T).IsValueType)
-            {
-                throw new NotSupportedException();
-            }
+            builder = t => Activator.CreateInstance<T>();
 
-            if (count < 0)
-            {
-                throw new ArgumentOutOfRangeException();
-            }
-
-            builder = t => (T)Activator.CreateInstance(typeof(T));
             originCount = count;
             itemList = new List<PoolItem>(originCount);
-            if (originCount <= 0)
-            {
-                return;
-            }
 
-            Rebuild(count);
+            if (originCount > 0)
+            {
+                Rebuild(count);
+            }
         }
 
         public ObjectPool(int count, Func<T, T> builder)
         {
-            if (typeof(T).IsValueType)
-            {
-                throw new NotSupportedException();
-            }
-
-            if (count < 0)
-            {
-                throw new ArgumentOutOfRangeException();
-            }
-
             this.builder = builder;
+            
             originCount = count;
             itemList = new List<PoolItem>(originCount);
-            if (originCount <= 0)
-                return;
-            Rebuild(count);
+
+            if (originCount > 0)
+            {
+                Rebuild(count);
+            }
         }
 
         public ObjectPool(T template, int count = 0, Func<T, T> builder = null)
         {
-            if (typeof(T).IsValueType)
-            {
-                throw new NotSupportedException();
-            }
-
-            if (count < 0)
-            {
-                throw new ArgumentOutOfRangeException();
-            }
-
             this.builder = builder;
-            Template = template ?? throw new ArgumentNullException();
+
+            Template = template;
             originCount = count;
             itemList = new List<PoolItem>(originCount);
-            if (originCount <= 0)
+
+            if (originCount > 0)
             {
-                return;
+                Rebuild(count);
             }
-
-            Rebuild(count);
         }
-
+        
         public ObjectPool(T template, T[] array, Func<T, T> builder = null)
         {
-            if (typeof(T).IsValueType)
-            {
-                throw new NotSupportedException();
-            }
-
-            if (array == null)
-            {
-                throw new ArgumentOutOfRangeException();
-            }
-
             this.builder = builder;
-            Template = template ?? throw new ArgumentNullException();
+            
+            Template = template;
             originCount = array.Length;
             itemList = new List<PoolItem>(originCount);
-            foreach (var t in array)
+            for (int index = 0; index < array.Length; ++index)
             {
-                if (t != null)
+                if (array[index] == null)
                 {
-                    PoolItem poolItem = new PoolItem(t);
-                    ++residueCount;
-                    itemList.Add(poolItem);
-                    poolItem.Item?.OnCreated(this);
-                    Created?.Invoke(poolItem.Instance);
+                    continue;
                 }
+
+                PoolItem item = new PoolItem(array[index]);
+
+                ++residueCount;
+                itemList.Add(item);
+
+                item.poolItem?.OnCreated(this);
+                Created?.Invoke(item.instance);
             }
 
-            ++version;
+            version++;
+
             Builded?.Invoke();
         }
-
+        
         public ObjectPool(T template, List<T> list, Func<T, T> builder = null)
         {
-            if (typeof(T).IsValueType)
-            {
-                throw new NotSupportedException();
-            }
-
-            if (list == null)
-            {
-                throw new ArgumentOutOfRangeException();
-            }
-
             this.builder = builder;
-            Template = template ?? throw new ArgumentNullException();
+
+            Template = template;
             originCount = list.Count;
             itemList = new List<PoolItem>(list.Count);
-            foreach (var t in list)
+            for (int index = 0; index < list.Count; ++index)
             {
-                if (t != null)
+                if (list[index] == null)
                 {
-                    PoolItem poolItem = new PoolItem(t);
-                    ++residueCount;
-                    itemList.Add(poolItem);
-                    poolItem.Item?.OnCreated(this);
-                    Created?.Invoke(poolItem.Instance);
+                    continue;
                 }
+
+                PoolItem item = new PoolItem(list[index]);
+
+                ++residueCount;
+                itemList.Add(item);
+
+                item.poolItem?.OnCreated(this);
+                Created?.Invoke(item.instance);
             }
 
-            ++version;
+            version++;
+
             Builded?.Invoke();
         }
-
-        /// <summary>
-        /// 生成一个对象
-        /// </summary>
-        /// <returns></returns>
+        
         public T Spawn()
         {
             lock (syncObject)
             {
-                foreach (var poolItem in itemList)
+                for (int i = 0; i < itemList.Count; ++i)
                 {
-                    if (!poolItem.Used)
+                    PoolItem item = itemList[i];
+                    if (!item.used)
                     {
                         --residueCount;
-                        poolItem.Used = true;
-                        poolItem.Item?.OnSpawned();
-                        Spawned?.Invoke(poolItem.Instance);
+                        item.used = true;
 
-                        return poolItem.Instance;
+                        item.poolItem?.OnSpawned();
+                        Spawned?.Invoke(item.instance);
+
+                        return item.instance;
                     }
                 }
 
-                switch (Mode)
+                if (Mode == (int)PoolMode.Add)
                 {
-                    case PoolMode.Recovery:
-                        while (!Recycle(itemList[stopIndex].Instance))
-                        {
-                            ++stopIndex;
-                            if (stopIndex >= itemList.Count - 1)
-                            {
-                                stopIndex = 0;
-                            }
-                        }
-
+                    Rebuild(Capacity + Math.Max(1, originCount));
+                }
+                else if (Mode == (int)PoolMode.Multiple)
+                {
+                    Rebuild(Math.Max(1, Capacity) * 2);
+                }
+                else if (Mode == (int)PoolMode.Recovery)
+                {
+                    while (!Recycle(itemList[stopIndex].instance))
+                    {
                         ++stopIndex;
                         if (stopIndex >= itemList.Count - 1)
                         {
                             stopIndex = 0;
                         }
+                    }
 
-                        break;
-                    case PoolMode.Multiple:
-                        Rebuild(Math.Max(1, Capacity) * 2);
-
-                        break;
-                    case PoolMode.Add:
-                        Rebuild(Capacity + Math.Max(1, originCount));
-
-                        break;
-                    default:
-                        Rebuild(Capacity + (int)Mode);
-
-                        break;
+                    ++stopIndex;
+                    if (stopIndex >= itemList.Count - 1)
+                    {
+                        stopIndex = 0;
+                    }
+                }
+                else
+                {
+                    Rebuild(Capacity + Mode);
                 }
 
                 return Spawn();
             }
         }
 
-        /// <summary>
-        /// 回收一个对象
-        /// </summary>
-        /// <param name="instance">要回收的对象实例</param>
-        /// <returns></returns>
         public bool Recycle(T instance)
         {
+            if(instance == null)
+            {
+                return false;
+            }
+
             lock (syncObject)
             {
-                foreach (var poolItem in itemList)
+                for (int i = 0; i < itemList.Count; ++i)
                 {
-                    if (poolItem.Instance == instance)
+                    PoolItem item = itemList[i];
+                    if (item.instance != instance)
                     {
-                        if (!poolItem.Used)
-                        {
-                            return true;
-                        }
+                        continue;
+                    }
 
-                        ++residueCount;
-                        poolItem.Used = false;
-                        poolItem.Item?.OnRecycled();
-                        Recycled?.Invoke(poolItem.Instance);
-
+                    if (!item.used)
+                    {
                         return true;
                     }
+
+                    ++residueCount;
+                    item.used = false;
+
+                    item.poolItem?.OnRecycled();
+                    Recycled?.Invoke(item.instance);
+
+                    return true;
                 }
 
                 return false;
             }
         }
 
-        /// <summary>
-        /// 全部回收
-        /// </summary>
         public void RecycleAll()
         {
             lock (syncObject)
             {
-                foreach (var poolItem in itemList)
+                for (int i = 0; i < itemList.Count; ++i)
                 {
-                    if (poolItem.Used)
+                    PoolItem item = itemList[i];
+                    if (!item.used)
                     {
-                        ++residueCount;
-                        poolItem.Used = false;
-                        poolItem.Item?.OnRecycled();
-                        Recycled?.Invoke(poolItem.Instance);
+                        continue;
                     }
+
+                    ++residueCount;
+                    item.used = false;
+
+                    item.poolItem?.OnRecycled();
+                    Recycled?.Invoke(item.instance);
                 }
             }
         }
 
-        /// <summary>
-        /// 销毁所有
-        /// </summary>
-        /// <param name="destroyTemplate">是否销毁模板</param>
         public void DestroyAll(bool destroyTemplate = true)
         {
             lock (syncObject)
@@ -361,13 +345,15 @@ namespace Pool
                 }
 
                 RecycleAll();
-                foreach (var poolItem in itemList)
+
+                for (int i = 0; i < itemList.Count; ++i)
                 {
-                    if (poolItem.Instance != null)
+                    PoolItem item = itemList[i];
+                    if (item.instance != null)
                     {
-                        poolItem.Item?.OnDestroying();
-                        Destroying?.Invoke(poolItem.Instance);
-                        DestroyImpl(poolItem.Instance);
+                        item.poolItem?.OnDestroying();
+                        Destroying?.Invoke(item.instance);
+                        DestroyImpl(item.instance);
                     }
                 }
 
@@ -380,14 +366,14 @@ namespace Pool
                 if (destroyTemplate && Template != null)
                 {
                     DestroyImpl(Template);
-                    Template = default;
+                    Template = null;
                 }
 
-                ++version;
+                version++;
                 residueCount = 0;
             }
         }
-
+        
         public IEnumerator<KeyValuePair<T, bool>> GetEnumerator()
         {
             return new Enumerator(this);
@@ -402,15 +388,18 @@ namespace Pool
 
         private void Rebuild(int count)
         {
-            for (int count1 = itemList.Count; count1 < count; ++count1)
+            for (int i = itemList.Count; i < count; ++i)
             {
                 T instance = BuildImpl(Template);
-                PoolItem poolItem = new PoolItem(instance);
+
+                PoolItem item = new PoolItem(instance);
+
                 ++residueCount;
-                poolItem.Instance = instance;
-                itemList.Add(poolItem);
-                poolItem.Item?.OnCreated(this);
-                Created?.Invoke(poolItem.Instance);
+                item.instance = instance;
+                itemList.Add(item);
+
+                item.poolItem?.OnCreated(this);
+                Created?.Invoke(item.instance);
             }
 
             Builded?.Invoke();
@@ -418,7 +407,7 @@ namespace Pool
 
         protected virtual T BuildImpl(T template)
         {
-            T obj = default;
+            T instance = null;
             if (builder != null)
             {
                 return builder(template);
@@ -426,68 +415,92 @@ namespace Pool
 
             if (template == null)
             {
-                return default;
+                return null;
             }
 
-            if (template is ICloneable cloneable)
+            if (template is ICloneable)
             {
-                obj = cloneable.Clone() as T;
+                ICloneable cloneable = template as ICloneable;
+                instance = cloneable.Clone() as T;
             }
             else if (template is IList || template is IDictionary)
             {
-                obj = Activator.CreateInstance<T>();
+                instance = (T)Activator.CreateInstance(typeof(T), template);
             }
 
-            if (obj == null)
+            if (instance == null)
             {
                 throw new NotSupportedException(template.GetType().Name + " type can not support build by pool.");
             }
 
-            return obj;
+            return instance;
         }
 
         protected virtual void DestroyImpl(T instance)
         {
+
         }
         #endregion
 
         #region Internal Fields
         private object syncObject = new object();
-        private int originCount;
-        private int stopIndex;
+        private int originCount = -1;
+        private int stopIndex = 0;
         private int version = -1;
-        private int residueCount;
-        private List<PoolItem> itemList;
-        private Func<T, T> builder;
+        private int residueCount = 0;
+        private List<PoolItem> itemList = null;
+        private Func<T, T> builder = null;
         #endregion
-       
 
+        #region Internal Declarations
+        private class PoolItem
+        {
+            public bool used;
+            public T instance;
+            public IPoolItem poolItem;
+            
+            public PoolItem(T instance)
+            {
+                used = false;
+                this.instance = instance;
+                Type itemType = instance.GetType();
+                if (typeof(IPoolItem).IsAssignableFrom(itemType))
+                {
+                    poolItem = instance as IPoolItem;
+                }
+            }
+        }
+        
         [Serializable]
         public struct Enumerator : IEnumerator<KeyValuePair<T, bool>>
         {
-            private ObjectPool<T> pool;
-            private int version;
-            private int index;
+            #region Properties
+            public KeyValuePair<T, bool> Current
+            {
+                get { return current; }
+            }
+            #endregion
 
-            public KeyValuePair<T, bool> Current { get; private set; }
-
+            #region Methods
             public bool MoveNext()
             {
                 if (version != pool.version)
                 {
-                    throw new InvalidOperationException("Object pool was modified, enumeration operation may not execute.");
+                    throw new InvalidOperationException(
+                        "Object pool was modified, enumeration operation may not execute.");
                 }
 
                 if (index >= pool.Capacity)
                 {
-                    Current = new KeyValuePair<T, bool>();
+                    current = new KeyValuePair<T, bool>();
 
                     return false;
                 }
 
-                PoolItem poolItem = pool.itemList[index];
-                Current = new KeyValuePair<T, bool>(poolItem.Instance, poolItem.Used);
-                ++index;
+                PoolItem item = pool.itemList[index];
+
+                current = new KeyValuePair<T, bool>(item.instance, item.used);
+                index++;
 
                 return true;
             }
@@ -495,13 +508,15 @@ namespace Pool
             public void Dispose()
             {
             }
+            #endregion
 
+            #region Internal Methods
             internal Enumerator(ObjectPool<T> pool)
             {
                 this.pool = pool;
                 version = pool.version;
                 index = -1;
-                Current = new KeyValuePair<T, bool>();
+                current = new KeyValuePair<T, bool>();
             }
 
             object IEnumerator.Current
@@ -513,7 +528,7 @@ namespace Pool
                         throw new InvalidOperationException("Current is not valid");
                     }
 
-                    return new KeyValuePair<T, bool>(Current.Key, Current.Value);
+                    return new KeyValuePair<T, bool>(current.Key, current.Value);
                 }
             }
 
@@ -521,49 +536,22 @@ namespace Pool
             {
                 if (version != pool.version)
                 {
-                    throw new InvalidOperationException("Object pool was modified, enumeration operation may not execute.");
+                    throw new InvalidOperationException(
+                        "Object pool was modified, enumeration operation may not execute.");
                 }
 
                 index = -1;
-                Current = new KeyValuePair<T, bool>();
-            }
-        }
-
-        /// <summary>
-        /// 对象
-        /// </summary>
-        private class PoolItem
-        {
-            #region Properties
-            /// <summary>
-            /// 当前是否正在使用中
-            /// </summary>
-            public bool Used { get; set; }
-
-            /// <summary>
-            /// 对象类型实例
-            /// </summary>
-            public T Instance { get; set; }
-
-            /// <summary>
-            /// 池对象
-            /// </summary>
-            public IPoolItem Item;
-            #endregion
-
-            #region Internal Methods
-            public PoolItem(T instance)
-            {
-                Used = false;
-                Instance = instance;
-                if (!(instance is IPoolItem))
-                {
-                    return;
-                }
-
-                Item = (IPoolItem) instance;
+                current = new KeyValuePair<T, bool>();
             }
             #endregion
+
+            #region Internal Fields
+            private ObjectPool<T> pool;
+            private int version;
+            private int index;
+            private KeyValuePair<T, bool> current;
+            #endregion
         }
+        #endregion
     }
 }

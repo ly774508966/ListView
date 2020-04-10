@@ -1,9 +1,8 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
-using UGUI.ListView;
 using UnityEngine;
 using UnityEngine.UI;
+using UGUI;
 using Random = UnityEngine.Random;
 
 public class Example01 : MonoBehaviour
@@ -40,9 +39,9 @@ public class Example01 : MonoBehaviour
         }
     }
 
-    private void StateChanged(MoveState state)
+    private void StateChanged(ScrollableRect.MoveState state)
     {
-        if (state == MoveState.MoveComplete)
+        if (state == ScrollableRect.MoveState.MoveComplete)
         {
             index++;
             if (index == 5)

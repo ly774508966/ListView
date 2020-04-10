@@ -1,8 +1,7 @@
-﻿using Pool;
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UI;
 
-namespace UGUI.ListView
+namespace UGUI
 {
     /// <summary>
     /// 滚动槽元素
@@ -48,7 +47,7 @@ namespace UGUI.ListView
         {
             get
             {
-                if (element == null && gameObject)
+                if (element == null && this)
                 {
                     element = GetComponent<LayoutElement>();
                 }
@@ -64,6 +63,11 @@ namespace UGUI.ListView
                 }
 
                 element.preferredHeight = value;
+
+                var size = RectTrans.sizeDelta;
+                size.y = value;
+                RectTrans.sizeDelta = size;
+                Parent.UpdateBounds();
             }
         }
 
@@ -90,13 +94,13 @@ namespace UGUI.ListView
                 }
 
                 element.preferredWidth = value;
+
+                var size = RectTrans.sizeDelta;
+                size.x = value;
+                RectTrans.sizeDelta = size;
+                Parent.UpdateBounds();
             }
         }
-
-        /// <summary>
-        /// 所属对象池
-        /// </summary>
-        public ObjectPool<GameObject> Pool { get; internal set; }
 
         /// <summary>
         /// 格子大小
@@ -124,6 +128,13 @@ namespace UGUI.ListView
         /// 间隔大小
         /// </summary>
         public float Spacing { get; internal set; }
+
+        /// <summary>
+        /// 预设名字
+        /// </summary>
+        public string PrefabName { get; internal set; }
+
+        public bool IsActive => gameObject.activeInHierarchy;
         #endregion
 
         #region Internal Methods
@@ -134,7 +145,7 @@ namespace UGUI.ListView
         {
             if (gameObject)
             {
-                Pool?.Recycle(gameObject);
+                ScrollPoolManager.Instance.Recycle(Parent.GetHashCode(), this);
             }
         }
         #endregion

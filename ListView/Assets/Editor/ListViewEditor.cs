@@ -1,5 +1,6 @@
-﻿using UGUI.ListView;
+﻿using UGUI;
 using UnityEditor;
+using UnityEngine;
 
 [CustomEditor(typeof(ListView))]
 public class ListViewEditor : Editor
@@ -7,7 +8,6 @@ public class ListViewEditor : Editor
     void OnEnable()
     {
         prefabSources = serializedObject.FindProperty("prefabSources");
-        localPool = serializedObject.FindProperty("localPool");
         isLoop = serializedObject.FindProperty("isLoop");
         content = serializedObject.FindProperty("content");
         totalCount = serializedObject.FindProperty("totalCount");
@@ -37,15 +37,14 @@ public class ListViewEditor : Editor
 
         EditorGUILayout.Space();
         EditorGUILayout.PropertyField(rubberScale);
-        EditorGUILayout.PropertyField(localPool);
         EditorGUILayout.PropertyField(isLoop);
 
-        EditorGUILayout.PropertyField(movementType);
         EditorGUILayout.PropertyField(content);
         EditorGUILayout.PropertyField(decelerationRate);
         EditorGUILayout.PropertyField(slowDownCoefficient);
         EditorGUILayout.PropertyField(viewRect);
 
+        EditorGUILayout.PropertyField(movementType);
         EditorGUILayout.PropertyField(inertia);
         if (inertia.boolValue)
         {
@@ -68,9 +67,9 @@ public class ListViewEditor : Editor
         }
 
         EditorGUI.indentLevel--;
-        EditorGUILayout.PropertyField(smoothDumpRate);
         EditorGUILayout.PropertyField(enableDragMove);
         EditorGUILayout.PropertyField(enableSnap);
+        EditorGUILayout.PropertyField(smoothDumpRate, new GUIContent("SnapSmoothRate"));
 
         EditorGUILayout.Space();
         EditorGUILayout.PropertyField(totalCount);
@@ -82,7 +81,6 @@ public class ListViewEditor : Editor
     }
 
     private SerializedProperty prefabSources;
-    private SerializedProperty localPool;
     private SerializedProperty isLoop;
     private SerializedProperty content;
     private SerializedProperty totalCount;

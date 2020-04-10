@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace UGUI.ListView
+namespace UGUI
 {
     /// <summary>
     /// 滑动列表控制器
@@ -27,7 +27,6 @@ namespace UGUI.ListView
         public Func<int, object, string> ListViewItemProvider;
         #endregion
 
-        
         #region Public Methods
         /// <summary>
         /// 重置数据并重新初始化
@@ -56,11 +55,6 @@ namespace UGUI.ListView
             if (!isInit)
             {
                 return string.Empty;
-            }
-
-            if (string.IsNullOrEmpty(path))
-            {
-                throw new Exception("路径为空");
             }
 
             var index = path.LastIndexOf('/');

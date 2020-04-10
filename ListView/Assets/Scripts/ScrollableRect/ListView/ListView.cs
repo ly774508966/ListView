@@ -1,10 +1,12 @@
 ﻿using System;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using UGUI;
 
-namespace UGUI.ListView
+namespace UGUI
 {
     /// <summary>
     /// 可循环的活动列表列表，复用Item
@@ -131,6 +133,7 @@ namespace UGUI.ListView
         {
             get
             {
+                EnsureLayoutHasRebuilt();
                 UpdateBounds();
                 if (Horizontal)
                 {
@@ -148,7 +151,7 @@ namespace UGUI.ListView
                         return (viewBounds.min.x - offset) / (totalSize - viewBounds.size.x);
                     }
 
-                    return 0f;
+                    return 0.5f;
                 }
 
                 if (!Loop && ItemEnd > ItemStart)
@@ -165,7 +168,7 @@ namespace UGUI.ListView
                     return (offset - viewBounds.max.y) / (totalSize - viewBounds.size.y);
                 }
 
-                return 0f;
+                return 0.5f;
             }
 
             set => SetNormalizedPosition(value, Horizontal ? 0 : 1);
@@ -328,16 +331,14 @@ namespace UGUI.ListView
 
             return size;
         }
-
+        
         /// <summary>
         /// 在开始初删除一个项
         /// </summary>
         /// <returns>删除项的大小</returns>
         protected override float DeleteItemAtStart()
         {
-            if ((dragging || velocity != Vector2.zero)
-                && ItemEnd > TotalCount + 1
-                && !Loop)
+            if (((dragging || velocity != Vector2.zero) && ItemEnd >= TotalCount - 1 && !Loop) || childrenList.Count == 0)
             {
                 return 0;
             }
@@ -377,9 +378,7 @@ namespace UGUI.ListView
         /// <returns>删除项的大小</returns>
         protected override float DeleteItemAtEnd()
         {
-            if ((dragging || velocity != Vector2.zero)
-                && ItemStart < CellCount
-                && !Loop)
+            if (((dragging || velocity != Vector2.zero) && !Loop && ItemStart < CellCount) || childrenList.Count == 0)
             {
                 return 0;
             }
@@ -438,10 +437,13 @@ namespace UGUI.ListView
                 verticalScrollbar.onValueChanged.AddListener(
                     SetVerticalNormalizedPosition);
             }
+
+            SetDirty();
         }
 
         protected override void OnDisable()
         {
+            StopAllCoroutines();
             if (horizontalScrollbar)
             {
                 horizontalScrollbar.onValueChanged.RemoveListener(
@@ -455,6 +457,7 @@ namespace UGUI.ListView
             }
 
             tracker.Clear();
+            velocity = Vector2.zero;
             LayoutRebuilder.MarkLayoutForRebuild(transform as RectTransform);
 
             base.OnDisable();
@@ -554,7 +557,27 @@ namespace UGUI.ListView
                                      offset.y, viewBounds.size.y) * rubberScale;
                 }
             }
+            else if (movementType == MovementType.Clamped)
+            {
+                var axis = Horizontal ? pointerDelta[0] : pointerDelta[1];
+                if ((ItemStart == 0 && axis < 0) || (ItemEnd == TotalCount && axis > 0))
+                {
+                    return;
+                }
 
+                if (offset.x != 0)
+                {
+                    position.x -= RubberDelta(
+                                      offset.x, viewBounds.size.x) * rubberScale;
+                }
+
+                if (offset.y != 0)
+                {
+                    position.y -= RubberDelta(
+                                      offset.y, viewBounds.size.y) * rubberScale;
+                }
+            }
+            
             //设置位置
             SetContentPosition(position);
             OnDragging?.Invoke(eventData);
@@ -729,7 +752,7 @@ namespace UGUI.ListView
                 int axis = Horizontal ? 0 : 1;
                 //当运动类型是弹性的并且内容在视图中有偏移量，则应用弹性移动
                 if (movementType == MovementType.Elastic && 
-                    Mathf.Abs(offset[axis]) > 1 &&
+                    Mathf.Abs(offset[axis]) > 1 && 
                     (ItemStart == 0 || ItemEnd == TotalCount))
                 {
                     float speed = 0;
@@ -740,7 +763,7 @@ namespace UGUI.ListView
                         elasticity,
                         Mathf.Infinity, deltaTime);
 
-                    if (Mathf.Abs(speed) < 1)
+                    if (Mathf.Abs(speed) < 10)
                     {
                         speed = 0;
                     }
@@ -764,7 +787,7 @@ namespace UGUI.ListView
                         {
                             velocity[axis] *= Mathf.Pow(DecelerationRate, deltaTime);
                         }
-                        else if (speed > 8000)
+                        else if (speed > 5000)
                         {
                             velocity[axis] *= Mathf.Pow(DecelerationRate, deltaTime * 2);
                         }
@@ -851,16 +874,18 @@ namespace UGUI.ListView
                 return;
             }
 
+            value = !ReverseDirection ? value : 1 - value;
             //更新区域大小
             EnsureLayoutHasRebuilt();
             UpdateBounds();
 
             Vector3 localPosition = Content.localPosition;
             var newLocalPosition = localPosition[axis];
+            var elementSize = 1f;
             //如果是横向位置
             if (axis == 0)
             {
-                var elementSize = contentBounds.size.x / (ItemEnd - ItemStart);
+                elementSize = contentBounds.size.x / (ItemEnd - ItemStart);
                 var totalSize = elementSize * TotalCount;
                 var offset = contentBounds.min.x - elementSize * ItemStart;
 
@@ -870,7 +895,7 @@ namespace UGUI.ListView
             //如果是纵向位置
             else if (axis == 1)
             {
-                var elementSize = contentBounds.size.y / (ItemEnd - ItemStart);
+                elementSize = contentBounds.size.y / (ItemEnd - ItemStart);
                 var totalSize = elementSize * TotalCount;
                 var offset = contentBounds.max.y + elementSize * ItemStart;
 
@@ -879,12 +904,25 @@ namespace UGUI.ListView
             }
 
             //更新位置
-            if (Mathf.Abs(localPosition[axis] - newLocalPosition) > 0.01f)
+            var offsetPos = Mathf.Abs(localPosition[axis] - newLocalPosition);
+            var moveDir = Horizontal ? localPosition[axis] - newLocalPosition > 0 : newLocalPosition - localPosition[axis] > 0;
+            if (offsetPos > 0.05f && (value > 0 && value < 1))
             {
-                localPosition[axis] = newLocalPosition;
-                Content.localPosition = localPosition;
-                velocity[axis] = 0;
-                UpdateBounds(true);
+                // 在这里 直接估计出当前位置 进行刷新不进行 移动操作
+                velocity = Vector2.zero;
+                if (offsetPos > 1000)
+                {
+                    int count = (int)(offsetPos / elementSize);
+                    count = moveDir ? count + 1 : -count - 1;
+                    var countValue = ReverseDirection ? TotalCount - (ItemEnd + count) : ItemStart + count;
+
+                    FillCells(Mathf.Clamp(countValue, 0, TotalCount));
+                }
+                else
+                {
+                    localPosition[axis] = newLocalPosition;
+                    SetContentPosition(localPosition);
+                }
             }
         }
 
@@ -915,22 +953,33 @@ namespace UGUI.ListView
         }
 
         /// <summary>
+        /// Override to alter or add to the code that keeps the appearance of the scroll rect synced with its data.
+        /// </summary>
+        protected void SetDirty()
+        {
+            if (!IsActive())
+                return;
+
+            LayoutRebuilder.MarkLayoutForRebuild(transform as RectTransform);
+        }
+
+        /// <summary>
         /// 更新滚动条数据
         /// </summary>
         private void UpdateSliderData()
         {
-            Transform cachTrans = transform;
+            Transform trans = transform;
             hBarRect = horizontalScrollbar == null ? null :
                 horizontalScrollbar.transform as RectTransform;
             vBarRect = verticalScrollbar == null ? null :
                 verticalScrollbar.transform as RectTransform;
 
             //确定水平和垂直滚动条是否为子元素
-            bool viewIsChild = ViewRect.parent == cachTrans;
+            bool viewIsChild = ViewRect.parent == trans;
             bool hScrollbarIsChild =
-                !hBarRect || hBarRect.parent == cachTrans;
+                !hBarRect || hBarRect.parent == trans;
             bool vScrollbarIsChild =
-                !vBarRect || vBarRect.parent == cachTrans;
+                !vBarRect || vBarRect.parent == trans;
             bool allAreChildren = viewIsChild && hScrollbarIsChild && vScrollbarIsChild;
 
             //滚动条是否需要展开
@@ -956,10 +1005,24 @@ namespace UGUI.ListView
         {
             if (Loop)
             {
+                if (Horizontal && horizontalScrollbar)
+                {
+                    horizontalScrollbar.size = 1;
+
+                    return;
+                }
+
+                if (!Horizontal && verticalScrollbar)
+                {
+                    verticalScrollbar.size = 1;
+
+                    return;
+                }
+
                 return;
             }
 
-            if (horizontalScrollbar)
+            if (Horizontal && horizontalScrollbar)
             {
                 //更新水平滑动条size和value
                 if (contentBounds.size.x > 0)
@@ -974,10 +1037,13 @@ namespace UGUI.ListView
                     horizontalScrollbar.size = 1;
                 }
 
-                horizontalScrollbar.value = NormalizedPosition;
+                var position = NormalizedPosition;
+                horizontalScrollbar.value = !ReverseDirection ? position : 1 - position;
+
+                return;
             }
 
-            if (verticalScrollbar)
+            if (!Horizontal && verticalScrollbar)
             {
                 //更新垂直滑动条size和value
                 if (contentBounds.size.y > 0)
@@ -992,7 +1058,8 @@ namespace UGUI.ListView
                     verticalScrollbar.size = 1;
                 }
 
-                verticalScrollbar.value = NormalizedPosition;
+                var position = NormalizedPosition;
+                verticalScrollbar.value = !ReverseDirection ? position : 1 - position;
             }
         }
 
@@ -1264,6 +1331,144 @@ namespace UGUI.ListView
             return true;
         }
 
+        /// <summary>
+        /// 滚动中效果
+        /// </summary>
+        /// <param name="speed">滚动速度</param>
+        protected override void DoMovingEffect(float speed)
+        {
+            StopAllCoroutines();
+            velocity = Vector2.zero;
+            StartCoroutine(ScrollToCell(speed));
+        }
+
+        private IEnumerator ScrollToCell(float speed)
+        {
+            var moveMore = ReverseDirection ? moveIndex > GetLastShow().Index : moveIndex < GetFirstShow().Index;
+            bool needMoving = true;
+            var move = 0f;
+            while (needMoving)
+            {
+                yield return 0;
+                if (!dragging)
+                {
+                    if (moveIndex < ItemStart)
+                    {
+                        move = -Time.deltaTime * speed;
+                    }
+                    else if (moveIndex >= ItemEnd)
+                    {
+                        move = Time.deltaTime * speed;
+                    }
+                    else
+                    {
+                        viewBounds = new Bounds(ViewRect.rect.center, ViewRect.rect.size);
+                        var index = 0;
+                        for (var i = 0; i < childrenList.Count; i++)
+                        {
+                            var item = childrenList[i];
+                            if (item.Index == moveIndex)
+                            {
+                                index = i;
+
+                                break;
+                            }
+                        }
+
+                        var itemBounds = GetBounds4Item(index);
+                        float offset;
+                        if (Horizontal)
+                        {
+                            offset = ReverseDirection ? itemBounds.max.x - viewBounds.max.x : viewBounds.max.y - itemBounds.max.y;
+                        }
+                        else
+                        {
+                            offset = ReverseDirection ? viewBounds.min.y - itemBounds.min.y : itemBounds.min.x - viewBounds.min.x;
+                        }
+
+                        // check if we cannot move on
+                        if (TotalCount >= 0)
+                        {
+                            if (offset > 0 && ItemEnd == TotalCount && !ReverseDirection)
+                            {
+                                itemBounds = GetBounds4Item(childrenList.Count - 1);
+                                // 到达底部
+                                if ((!Horizontal && itemBounds.min.y >= viewBounds.min.y) ||
+                                    (Horizontal && itemBounds.max.x <= viewBounds.max.x))
+                                {
+                                    break;
+                                }
+                            }
+                            else if (offset < 0 && ItemStart == 0 && ReverseDirection)
+                            {
+                                itemBounds = GetBounds4Item(0);
+                                if ((!Horizontal && itemBounds.max.y <= viewBounds.max.y) ||
+                                    (Horizontal && itemBounds.min.x >= viewBounds.min.x))
+                                {
+                                    break;
+                                }
+                            }
+                        }
+
+                        float maxMove = Time.deltaTime * speed;
+                        if (Mathf.Abs(offset) < maxMove)
+                        {
+                            needMoving = false;
+                            move = offset;
+                        }
+                        else
+                        {
+                            move = Mathf.Sign(offset) * maxMove;
+                        }
+                    }
+
+                    if (move != 0)
+                    {
+                        Vector2 offset = GetVector(move);
+                        SetContentPosition(offset + Content.anchoredPosition);
+                        if (((moveIndex == ItemStart || ItemEnd == TotalCount) && !ReverseDirection ) || 
+                            ((moveIndex == ItemEnd || ItemStart == 0) && ReverseDirection))
+                        {
+                            if (moveMore)
+                            {
+                                break;
+                            }
+
+                            SetContentPosition(Vector2.zero, false);
+
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    needMoving = false;
+                }
+            }
+
+            if (moveMore)
+            {
+                var total = Horizontal ? GetFirstShow().Width : GetFirstShow().Height;
+                var current = 0f;
+                while (current <= total)
+                {
+                    yield return 0;
+                    if (!dragging)
+                    {
+                        current += Mathf.Abs(move);
+                        Vector2 offset = GetVector(move);
+                        SetContentPosition(offset + Content.anchoredPosition, false);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                SetContentPosition(Vector2.zero);
+            }
+        }
+
 #if UNITY_EDITOR
         /// <summary>
         /// 当该脚本被加载或检视面板的值被修改时，此函数被调用（仅在编辑器被调用）。
@@ -1314,12 +1519,14 @@ namespace UGUI.ListView
         /// 只是针对于Movement == MovementType.Elastic有效
         /// </summary>
         [SerializeField]
-        private float elasticity = 0.1f;
+        [Range(0, 0.5f)]
+        private float elasticity = 0.05f;
 
         /// <summary>
-        /// 暂时理解为拖动弹力大小
+        /// 拖拽比例
         /// </summary>
         [SerializeField]
+        [Range(0, 2)]
         private float rubberScale = 1;
 
         /// <summary>
@@ -1362,12 +1569,13 @@ namespace UGUI.ListView
         /// 当拖动值改变时
         /// </summary>
         [SerializeField]
-        private ScrollRectEvent onValueChanged;
+        private ScrollRectEvent onValueChanged = null;
 
         [SerializeField]
-        private bool enableSnap;
+        private bool enableSnap = false;
 
         [SerializeField]
+        [Range(0, 1)]
         private float smoothDumpRate = 0.1f;
 
         /// <summary>
@@ -1378,8 +1586,6 @@ namespace UGUI.ListView
 
         //拖拽相关
         private bool dragging;
-        private Bounds lastBounds;
-        private Bounds firstBounds;
 
         //滚动条相关
         private bool hSliderExpand;
@@ -1392,8 +1598,7 @@ namespace UGUI.ListView
         //snap相关
         private Vector2 lastVelocity;
         private bool updateSnap;
-        private SnapData currentSnapData = new SnapData();
-        private float smoothDumpValue;
+        private readonly SnapData currentSnapData = new SnapData();
         private float snapFinishThreshold = 0.1f;
         private float snapVelocityThreshold = 150;
 

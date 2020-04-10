@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-namespace UGUI.ListView
+namespace UGUI
 {
     /// <summary>
     /// 页面管理器

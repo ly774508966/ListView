@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UObject = UnityEngine.Object;
 
-namespace UGUI.ListView
+namespace UGUI
 {
     /// <summary>
     /// 滑动槽控制器
@@ -27,11 +27,11 @@ namespace UGUI.ListView
         /// 初始化
         /// </summary>
         /// <param name="slot">滑动列表</param>
-        /// <param name="binderCreator">绑定创建器</param>
+        /// <param name="creator">绑定创建器</param>
         /// <param name="datas">准备初始化的数据</param>
         public void Initialize(
             ScrollableRect slot,
-            Func<ItemBinder> binderCreator,
+            Func<ItemBinder> creator,
             IList datas)
         {
             if (isInit)
@@ -39,19 +39,13 @@ namespace UGUI.ListView
                 return;
             }
 
-            if (slot == null || binderCreator == null || datas == null)
-            {
-                throw new Exception("控制器初始化失败, 请检查出事参数");
-            }
-
             Target = slot;
-            this.binderCreator = binderCreator;
+            binderCreator = creator;
             SourceDatas = datas;
             OnInitialize();
 
             Target.FillItemData = FillItemData;
             Target.TotalCount = SourceDatas.Count;
-            Target.FillCells();
 
             isInit = true;
         }
@@ -95,7 +89,6 @@ namespace UGUI.ListView
             }
 
             OnRelease();
-            SourceDatas.Clear();
             foreach (var binder in binders)
             {
                 if (!binder.Value.resetFlag)
@@ -108,7 +101,8 @@ namespace UGUI.ListView
             }
 
             binders.Clear();
-            Target.ClearCells(false);
+            Target.ClearCells(true);
+            SourceDatas = null;
         }
         #endregion
 
@@ -152,28 +146,28 @@ namespace UGUI.ListView
             item.name = index.ToString();
             bool isNewCreated = false;
 
-            if (!binders.TryGetValue(item, out var bindler))
+            if (!binders.TryGetValue(item, out var binder))
             {
                 isNewCreated = true;
-                bindler = binderCreator();
-                bindler.Controller = this;
-                bindler.Target = item;
-                bindler.Initialize();
-                binders.Add(item, bindler);
+                binder = binderCreator();
+                binder.Controller = this;
+                binder.Target = item;
+                binder.Initialize();
+                binders.Add(item, binder);
             }
 
             if (!isNewCreated)
             {
-                if (!bindler.resetFlag)
+                if (!binder.resetFlag)
                 {
-                    bindler.Reset();
+                    binder.Reset();
                 }
             }
 
-            bindler.Index = index;
-            bindler.Data = data;
-            bindler.Bind(data, index);
-            bindler.resetFlag = false;
+            binder.Index = index;
+            binder.Data = data;
+            binder.Bind(data, index);
+            binder.resetFlag = false;
         }
         #endregion
 
