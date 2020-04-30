@@ -37,11 +37,11 @@ namespace UGUI
 
                     var go = values[i] as GameObject;
 
-                    return go.GetComponent<T>();
+                    return go?.GetComponent<T>();
                 }
             }
 
-            return default(T);
+            return default;
         }
         #endregion
 

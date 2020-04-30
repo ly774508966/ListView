@@ -6,6 +6,24 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/0-ScrollRect.unity
+    path: Assets/Scenes/0-Init.unity
+    guid: 33f4ac71cbd60d94a987efa5dddca233
+  - enabled: 1
+    path: Assets/Scenes/ScrollRect.unity
     guid: 2cda990e2423bbf4892e6590ba056729
+  - enabled: 1
+    path: Assets/Scenes/Botton2Top.unity
+    guid: a50719f406f6ada48a550bd1532ec272
+  - enabled: 1
+    path: Assets/Scenes/Left2Right.unity
+    guid: a494dc2d4cba94044b0f6be9dfa94991
+  - enabled: 1
+    path: Assets/Scenes/Right2Left.unity
+    guid: 09bea848fa3c9af4498f2aff5a1ef08d
+  - enabled: 1
+    path: Assets/Scenes/Top2Bottom.unity
+    guid: 146d03580d001d440a3e2a6d77d1810a
+  - enabled: 1
+    path: Assets/Scenes/SelectAndDelete.unity
+    guid: 0781ac0e803dcdd448a75197284d8140
   m_configObjects: {}

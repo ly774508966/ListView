@@ -395,6 +395,10 @@ namespace UGUI
         protected override void Awake()
         {
             base.Awake();
+            if (!content)
+            {
+                content = transform.GetChild(0).GetComponent<RectTransform>();
+            }
 
             if (Scrollbar)
             {

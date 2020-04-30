@@ -1934,7 +1934,7 @@ namespace UGUI
         /// 内容父节点
         /// </summary>
         [SerializeField]
-        private RectTransform content = null;
+        protected RectTransform content = null;
 
         /// <summary>
         /// 总数量
@@ -1951,7 +1951,7 @@ namespace UGUI
         private float slowDownCoefficient = 2;
 
         [SerializeField]
-        private RectTransform viewRect;
+        protected RectTransform viewRect;
 
         [SerializeField]
         private Direction scrollDirection = Direction.LeftToRight;

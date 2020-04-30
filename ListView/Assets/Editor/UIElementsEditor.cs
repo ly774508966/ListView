@@ -13,7 +13,7 @@ namespace UGUI.Editor
     public class UIElementsEditor : UnityEditor.Editor
     {
         #region Internal Methods
-        private void OnEnable()
+        private void Awake()
         {
             var type = target.GetType();
             var flag = BindingFlags.Instance |
@@ -42,7 +42,7 @@ namespace UGUI.Editor
         {
             EditorGUILayout.Space();
             serializedObject.Update();
-            list.DoLayoutList();
+            list?.DoLayoutList();
             serializedObject.ApplyModifiedProperties();
         }
 

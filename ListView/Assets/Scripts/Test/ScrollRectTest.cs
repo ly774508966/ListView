@@ -3,15 +3,24 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using UGUI;
+using UnityEngine.SceneManagement;
 using Random = UnityEngine.Random;
 
-public class Example01 : MonoBehaviour
+public class ScrollRectTest : MonoBehaviour
 {
     void Start()
     {
+        backButton.onClick.AddListener(() =>
+        {
+            SceneManager.LoadScene(Init.initSceneName, LoadSceneMode.Single);
+        });
+        startBtn.onClick.AddListener(() =>
+        {
+            StartCoroutine(Scroll());
+        });
         Application.targetFrameRate = 0;
 
-        foreach (var rect in scrollables)
+        foreach (var rect in scrollList)
         {
             rect.FillItemData = (item, i) =>
             {
@@ -29,7 +38,8 @@ public class Example01 : MonoBehaviour
                 Sprite sprite = Resources.Load<Sprite>(iconName);
                 if (sprite)
                 {
-                    item.transform.Find("Item").GetComponent<Image>().sprite = sprite;
+                    item.transform.Find("Icon").GetComponent<Image>().sprite = sprite;
+                    item.transform.Find("Name").GetComponent<Text>().text = i.ToString();
                 }
             };
 
@@ -52,19 +62,11 @@ public class Example01 : MonoBehaviour
         }
     }
 
-    void Update()
-    {
-        if (Input.GetMouseButtonDown(0) && moveComplete)
-        {
-            StartCoroutine(Scroll());
-        }
-    }
-
     private IEnumerator Scroll()
     {
         moveComplete = false;
         yield return null;
-        foreach (var scrollable in scrollables)
+        foreach (var scrollable in scrollList)
         {
             scrollable.FillCells();
             scrollable.ScrollToView(30, true, 3000);
@@ -74,7 +76,11 @@ public class Example01 : MonoBehaviour
     }
 
     [SerializeField]
-    private List<ScrollableRect> scrollables;
+    private List<ScrollableRect> scrollList = null;
+    [SerializeField]
+    private Button backButton;
+    [SerializeField]
+    private Button startBtn;
     private int index;
     private bool moveComplete = true;
 }

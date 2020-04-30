@@ -2,7 +2,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-public class Example02 : MonoBehaviour
+public class ListViewExamples : MonoBehaviour
 {
     void Start()
     {
